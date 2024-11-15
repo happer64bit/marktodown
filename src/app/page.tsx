@@ -1,101 +1,180 @@
-import Image from "next/image";
+"use client";
+import { useState, useEffect, useCallback } from "react";
+import markdownProcessor from "@/lib/markdown";
+import { Button } from "@/components/ui/button";
+import {
+  BookOpenIcon,
+  Code2Icon,
+  CopyIcon,
+  FileOutputIcon,
+  ShareIcon,
+  SplitSquareHorizontal,
+} from "lucide-react";
+import Link from "next/link";
+import { useDebounce } from "@/hooks/useDebounce";
+import MarkdownEditor from "@/components/MarkdownEditor";
+import MarkdownPreview from "@/components/MarkdownPreview";
+import ViewModeButton from "@/components/ViewModeButton";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/hooks/use-toast";
+
+const DEBOUNCE_DELAY = 300;
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [text, setText] = useState("# Hello World");
+  const [html, setHtml] = useState("");
+  const [viewMode, setViewMode] = useState("split");
+  const [isExporting, setIsExporting] = useState(false);
+  const [id, setId] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const debouncedText = useDebounce(text, DEBOUNCE_DELAY);
+
+  // Process markdown text
+  useEffect(() => {
+    let isMounted = true;
+
+    const processMarkdown = async () => {
+      try {
+        const processedHtml = await markdownProcessor.process(debouncedText);
+        if (isMounted) {
+          setHtml(processedHtml.toString());
+        }
+      } catch (error) {
+        console.error("Error processing markdown:", error);
+      }
+    };
+
+    processMarkdown();
+    return () => {
+      isMounted = false;
+    };
+  }, [debouncedText]);
+
+  // Share function
+  const shareContent = async () => {
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        body: JSON.stringify({ content: text }),
+      });
+      const json = await res.json();
+      setId(json.id);
+      setDialogOpen(true);
+    } catch (error) {
+      console.error("Error sharing content:", error);
+    }
+  };
+
+  // Export markdown as .md file
+  const exportMarkdown = () => {
+    setIsExporting(true);
+    try {
+      const blob = new Blob([text], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `document_${new Date().toISOString().split("T")[0]}.md`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error exporting markdown:", error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Copy shareable link to clipboard
+  const copyLink = async () => {
+    "use client"
+    try {
+      if (typeof window != "undefined") {
+        await navigator.clipboard.writeText(`${origin ?? "http://localhost:3000"}/${id}`);
+        toast({
+          title: "Link copied to clipboard!"
+        });
+      }
+    } catch (error) {
+      console.error("Failed to copy link:", error);
+    }
+  };
+
+  // View mode handlers
+  const showEditorOnly = useCallback(() => setViewMode("editor"), []);
+  const showPreviewOnly = useCallback(() => setViewMode("preview"), []);
+  const showSplitView = useCallback(() => setViewMode("split"), []);
+
+  return (
+    <>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Share Link</DialogTitle>
+            <DialogDescription>Share this link with others.</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-2">
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="link" className="sr-only">
+                Link
+              </Label>
+              <Input
+                id="link"
+                defaultValue={`${process.env.NEXT_PUBLIC_BASE_URL}/${id}`}
+                readOnly
+              />
+            </div>
+            <Button onClick={copyLink} size="sm" className="px-3">
+              <span className="sr-only">Copy</span>
+              <CopyIcon />
+            </Button>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="secondary">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <div className="h-screen bg-neutral-900 text-white flex flex-col">
+        <nav className="flex items-center gap-4 border-b border-b-white/10 py-2 px-4">
+          <Link href="/" prefetch={false}>
+            <h1 className="text-lg font-bold">MarkToDown</h1>
+          </Link>
+          <div className="ml-auto flex items-center gap-4">
+            <Button onClick={shareContent} variant="outline" className="flex items-center gap-2">
+              <ShareIcon />
+            </Button>
+            <Button onClick={exportMarkdown} variant="default" disabled={isExporting} className="flex items-center gap-2">
+              <FileOutputIcon className={isExporting ? "animate-spin" : ""} />
+              {isExporting ? "Exporting..." : "Export Markdown"}
+            </Button>
+          </div>
+        </nav>
+
+        <div className={`flex-1 grid ${viewMode === "split" ? "lg:grid-cols-2" : "grid-cols-1"} divide-x divide-white/10`}>
+          {(viewMode === "split" || viewMode === "editor") && <MarkdownEditor value={text} onChange={setText} />}
+          {(viewMode === "split" || viewMode === "preview") && <MarkdownPreview html={html} />}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        <div className="fixed right-10 top-16 flex items-center gap-4 bg-neutral-800 p-2 rounded shadow-lg">
+          <ViewModeButton icon={Code2Icon} onClick={showEditorOnly} isActive={viewMode === "editor"} title="Editor View" />
+          <ViewModeButton icon={SplitSquareHorizontal} onClick={showSplitView} isActive={viewMode === "split"} title="Split View" />
+          <ViewModeButton icon={BookOpenIcon} onClick={showPreviewOnly} isActive={viewMode === "preview"} title="Preview View" />
+        </div>
+      </div>
+    </>
   );
 }
